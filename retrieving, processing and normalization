@@ -1,0 +1,212 @@
+# Step 1: Mount Google Drive
+from google.colab import drive
+drive.mount('/content/drive')
+
+# Step 2: Install SRA Toolkit
+!apt-get install -y sra-toolkit
+
+# Step 3: Define the SRA accession number and the path in Google Drive
+sra_accession = ''  # Replace with your SRA accession number
+drive_path = '/content/'  # Specify your desired path in Google Drive
+
+# Step 4: Create the directory if it doesn't exist
+!mkdir -p "{drive_path}"
+
+# Step 5: Download FASTQ files and save to Google Drive
+!fastq-dump --split-files --gzip --outdir "{drive_path}" {sra_accession}
+
+import gzip
+
+def unzip_gz_fastq(gz_file_path, output_file_path):
+  """Unzips a .gz.fastq file.
+
+  Args:
+    gz_file_path: The path to the .gz.fastq file.
+    output_file_path: The path to the output .fastq file.
+  """
+
+  with gzip.open(gz_file_path, 'rb') as gz_file, open(output_file_path, 'wb') as output_file:
+    for line in gz_file:
+      output_file.write(line)
+
+# Example usage:
+gz_file = "/content/file.fastq.gz"
+output_file = "/content/file.fastq"
+unzip_gz_fastq(gz_file, output_file)
+
+# Install cutadapt and FastQC
+!pip install cutadapt
+!apt-get update
+!apt-get install -y fastqc
+
+from google.colab import drive
+import os
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Set file paths
+raw_fastq_file = '/content/file.fastq'
+trimmed_fastq_file = '/content/trimmed.fastq'
+fastqc_output_dir_preprocessed = '/content/fastqc_reports_preprocessed'
+
+# Create output directory if it doesn't exist
+os.makedirs(fastqc_output_dir_preprocessed, exist_ok=True)
+
+# Run cutadapt to trim adapters (example command with placeholder adapter sequence)
+!cutadapt -a AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC -o {trimmed_fastq_file} {raw_fastq_file}
+
+# Run FastQC on the trimmed FASTQ file
+!fastqc {trimmed_fastq_file} -o {fastqc_output_dir_preprocessed}
+
+from google.colab import drive
+import os
+
+# Mount Google Drive
+drive.mount('/content/drive')
+
+# Set paths in Google Drive
+genome_fasta = '/content/Homo_sapiens.GRCh38.dna.primary_assembly.fa'  # Path to your pre-downloaded genome.fa
+index_dir = '/content/hisat2_index'
+trimmed_fastq_file = '/content/trimmed.fastq'
+aligned_sam_file = '/content/aligned.sam'
+aligned_bam_file = '/content/aligned.bam'
+sorted_bam_file = '/content/sorted.bam'
+
+# Create the index directory if it doesn't exist
+os.makedirs(index_dir, exist_ok=True)
+
+# Install HISAT2 and Samtools
+!apt-get update
+!apt-get install -y hisat2 samtools
+
+# Build the HISAT2 index
+!hisat2-build {genome_fasta} {index_dir}/genome_index
+
+# Run HISAT2 for alignment
+!hisat2 -p 8 -x {index_dir}/genome_index -U {trimmed_fastq_file} -S {aligned_sam_file}
+
+# Convert SAM to BAM
+!samtools view -bS {aligned_sam_file} > {aligned_bam_file}
+
+# Sort the BAM file
+!samtools sort {aligned_bam_file} -o {sorted_bam_file}
+
+# Install StringTie in Google Colab
+!apt-get install stringtie
+
+
+# Transcript assembly using StringTie
+# BAM file: aligned_reads.bam (your aligned RNA-seq data)
+# GTF file: reference_annotation.gtf (from GENCODE/NONCODE)
+# Output: Assembled transcripts in GTF format, along with expression levels
+
+!stringtie /content/sorted.bam -G /content/file.gtf -o /content/assembled_transcripts.gtf -A /content/file.tsv -e -B
+
+# Options:
+# -G : reference annotation in GTF format
+# -o : output file for assembled transcripts (GTF)
+# -A : output file for gene abundances (FPKM/TPM values)
+# -e : limits estimation to the reference transcriptome
+# -B : output Ballgown files for further analysis
+
+!apt-get update
+!apt-get install -y subread # For featureCounts
+!apt-get install -y stringtie # For StringTie
+
+!featureCounts -v
+!stringtie --version
+from google.colab import files
+
+!featureCounts -T 8 -t exon -g gene_id -a /content/file.gtf -o /content/count.txt /content/sorted.bam
+
+!pip install gffutils # Install the missing gffutils module
+
+import pandas as pd
+import gffutils
+
+# Load the count and gene abundance files
+count_file_path = ''  # Update this path
+abundance_file_path = ''  # Update this path
+gtf_file_path = ''  # Update this path to the GTF annotation file
+
+# Step 1: Load count and gene abundance files
+count_df = pd.read_csv(count_file_path)
+abundance_df = pd.read_csv(abundance_file_path)
+
+# Step 2: Create a GTF database from annotation file
+# Disable infer genes and infer transcripts options to speed up database creation
+db = gffutils.create_db(
+    gtf_file_path,
+    dbfn='/content/annotation.db',
+    force=True,
+    keep_order=True,
+    merge_strategy='merge',
+    sort_attribute_values=True,
+    disable_infer_genes=True,      # Disable inferring gene features
+    disable_infer_transcripts=True 
+)
+
+# Step 3: Extract gene IDs from GTF annotation
+mRNA_ids = []
+lncRNA_ids = []
+
+for gene in db.features_of_type('gene'):
+    gene_type = gene.attributes.get('gene_biotype', [None])[0] 
+    if gene_type == 'protein_coding':  
+        RNA_ids.append(gene.id)
+    elif 'RNA' in gene_type: 
+        RNA_ids.append(gene.id)
+
+# Step 4: Filter count and abundance data based on RNA
+RNA_df = count_df[count_df['Geneid'].isin(RNA_ids)]
+
+abundance_df = abundance_df[abundance_df['Gene ID'].isin(RNA_ids)]
+
+print("Extracted data saved successfully.")
+
+import pandas as pd
+import numpy as np # Import the numpy module
+
+# Load the count file
+abundance_file_path = '/content/abundance.csv'
+df = pd.read_csv(abundance_file_path)
+
+# Check for missing values
+missing_values = df.isnull().sum()
+print("Missing values per column:\n", missing_values)
+
+# Fill missing values with 0 (if applicable) or remove rows with missing values
+df_filled = df.fillna(0)  # Alternatively, use df.dropna()
+
+# Normalization (if not done already, example using log2)
+df_normalized = df_filled.copy()
+df_normalized.iloc[:, 6:] = df_filled.iloc[:, 6:].apply(lambda x: (x + 1).apply(np.log2))  # Add 1 to avoid log(0)
+
+# Save the normalized data
+df_normalized.to_csv('/content/normalized_abundance.csv', index=False)
+
+print("Normalized data saved successfully.")
+
+import pandas as pd
+import numpy as np # Import the numpy module
+
+# Load the count file
+abundance_file_path = '/content/counts.csv'
+df = pd.read_csv(abundance_file_path)
+
+# Check for missing values
+missing_values = df.isnull().sum()
+print("Missing values per column:\n", missing_values)
+
+# Fill missing values with 0 (if applicable) or remove rows with missing values
+df_filled = df.fillna(0)  # Alternatively, use df.dropna()
+
+# Normalization (if not done already, example using log2)
+df_normalized = df_filled.copy()
+df_normalized.iloc[:, 6:] = df_filled.iloc[:, 6:].apply(lambda x: (x + 1).apply(np.log2))  # Add 1 to avoid log(0)
+
+# Save the normalized data
+df_normalized.to_csv('/content/normalized_count.csv', index=False)
+
+print("Normalized data saved successfully.")
