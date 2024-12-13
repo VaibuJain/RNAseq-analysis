@@ -8,7 +8,7 @@ This repository contains a Jupyter Notebook demonstrating RNA-seq analysis steps
 
 ## How to Use
 1. Clone the repository.
-2. Open the notebook `project_lncrna.ipynb`.
+2. Open the notebook `.ipynb`.
 3. Follow the steps outlined in the notebook.
 
 ## Prerequisites
